@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chatbot</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+
+        #api-key-section, #chatbot-section {
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        #chatbot-section {
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+        }
+
+        #chat-log {
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 18px;
+            max-width: 80%;
+            line-height: 1.4;
+        }
+
+        .user-message {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .bot-message {
+            background-color: #f1f0f0;
+            align-self: flex-start;
+        }
+
+        #suggestion-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        #suggestion-buttons button {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 18px;
+            background-color: #f9f9f9;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #suggestion-buttons button:hover {
+            background-color: #e0e0e0;
+        }
+
+        #message-form {
+            display: flex;
+        }
+
+        #message-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
+        #message-form button {
+            padding: 10px 20px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 8px;
+            margin-left: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #message-form button:hover {
+            background-color: #0056b3;
+        }
+
+        #api-key-section {
+            text-align: center;
+        }
+
+        #api-key-section input {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
+        #api-key-section button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #api-key-section button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <section id="api-key-section">
+        <h2>Enter your Google Gemini API Key</h2>
+        <input type="password" id="api-key-input" placeholder="Your API Key">
+        <button id="save-api-key-button">儲存</button>
+    </section>
+
+    <section id="chatbot-section" style="display: none;">
+        <div id="chat-log"></div>
+        <div id="suggestion-buttons">
+            <button>你好，請介紹一下自己</button>
+            <button>用簡單的方式解釋什麼是 API</button>
+            <button>給我三個學習 JavaScript 的建議</button>
+        </div>
+        <form id="message-form">
+            <input type="text" id="message-input" placeholder="輸入訊息...">
+            <button type="submit">傳送</button>
+        </form>
+    </section>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm";
+
+        const apiKeySection = document.getElementById('api-key-section');
+        const chatbotSection = document.getElementById('chatbot-section');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveApiKeyButton = document.getElementById('save-api-key-button');
+        const chatLog = document.getElementById('chat-log');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const suggestionButtons = document.getElementById('suggestion-buttons');
+
+        let genAI;
+        let chat;
+
+        function initializeChat(apiKey) {
+            try {
+                genAI = new GoogleGenerativeAI(apiKey);
+                const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+                chat = model.startChat({
+                    history: [],
+                    generationConfig: {
+                        maxOutputTokens: 500,
+                    },
+                });
+                apiKeySection.style.display = 'none';
+                chatbotSection.style.display = 'flex';
+            } catch (error) {
+                console.error("Error initializing Google Generative AI:", error);
+                alert("Failed to initialize the AI model. Please check your API key and try again.");
+                localStorage.removeItem('googleGeminiApiKey');
+            }
+        }
+
+        function addMessageToLog(message, sender) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', `${sender}-message`);
+            messageElement.textContent = message;
+            chatLog.appendChild(messageElement);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        async function sendMessage(message) {
+            if (!chat) {
+                alert("Chat is not initialized. Please set your API key.");
+                return;
+            }
+
+            addMessageToLog(message, 'user');
+            messageInput.value = '';
+
+            try {
+                addMessageToLog("Thinking...", 'bot');
+
+                const result = await chat.sendMessage(message);
+                const response = await result.response;
+                const text = response.text();
+
+                chatLog.removeChild(chatLog.lastChild);
+                addMessageToLog(text, 'bot');
+
+            } catch (error) {
+                console.error("Error sending message:", error);
+                 if (chatLog.lastChild.textContent === "Thinking...") {
+                     chatLog.removeChild(chatLog.lastChild);
+                }
+                addMessageToLog("Sorry, something went wrong. Please try again.", 'bot');
+            }
+        }
+
+        saveApiKeyButton.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey) {
+                localStorage.setItem('googleGeminiApiKey', apiKey);
+                initializeChat(apiKey);
+            } else {
+                alert('Please enter a valid API Key.');
+            }
+        });
+
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            if (message) {
+                sendMessage(message);
+            }
+        });
+
+        suggestionButtons.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const message = e.target.textContent;
+                sendMessage(message);
+            }
+        });
+
+        const storedApiKey = localStorage.getItem('googleGeminiApiKey');
+        if (storedApiKey) {
+            initializeChat(storedApiKey);
+        }
+
+    </script>
+</body>
+</html>
