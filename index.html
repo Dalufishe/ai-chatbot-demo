@@ -131,6 +131,75 @@
         #api-key-section button:hover {
             background-color: #0056b3;
         }
+
+        #app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #sidebar {
+            width: 250px;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-right: 1px solid #dee2e6;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #new-chat-button {
+            padding: 10px 15px;
+            border: 1px solid #007bff;
+            background-color: white;
+            color: #007bff;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        #new-chat-button:hover {
+            background-color: #007bff;
+            color: white;
+        }
+
+        #history-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+            overflow-y: auto;
+        }
+
+        #history-list li {
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+
+        #history-list li:hover {
+            background-color: #e9ecef;
+        }
+
+         #history-list li.active {
+            background-color: #007bff;
+            color: white;
+        }
+
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        #chatbot-section {
+            width: 100%;
+            height: 100%;
+            max-width: 800px;
+        }
     </style>
 </head>
 <body>
@@ -141,23 +210,32 @@
         <button id="save-api-key-button">儲存</button>
     </section>
 
-    <section id="chatbot-section" style="display: none;">
-        <div id="chat-log"></div>
-        <div id="suggestion-buttons">
-            <button>你好，請介紹一下自己</button>
-            <button>用簡單的方式解釋什麼是 API</button>
-            <button>給我三個學習 JavaScript 的建議</button>
-        </div>
-        <form id="message-form">
-            <input type="text" id="message-input" placeholder="輸入訊息...">
-            <button type="submit">傳送</button>
-        </form>
-    </section>
+    <div id="app-container" style="display: none;">
+        <aside id="sidebar">
+            <button id="new-chat-button">+ 新增對話</button>
+            <ul id="history-list"></ul>
+        </aside>
+        <main id="main-content">
+            <section id="chatbot-section">
+                <div id="chat-log"></div>
+                <div id="suggestion-buttons">
+                    <button>你好，請介紹一下自己</button>
+                    <button>用簡單的方式解釋什麼是 API</button>
+                    <button>給我三個學習 JavaScript 的建議</button>
+                </div>
+                <form id="message-form">
+                    <input type="text" id="message-input" placeholder="輸入訊息...">
+                    <button type="submit">傳送</button>
+                </form>
+            </section>
+        </main>
+    </div>
 
     <script type="module">
         import { GoogleGenerativeAI } from "https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm";
 
         const apiKeySection = document.getElementById('api-key-section');
+        const appContainer = document.getElementById('app-container');
         const chatbotSection = document.getElementById('chatbot-section');
         const apiKeyInput = document.getElementById('api-key-input');
         const saveApiKeyButton = document.getElementById('save-api-key-button');
@@ -165,9 +243,15 @@
         const messageForm = document.getElementById('message-form');
         const messageInput = document.getElementById('message-input');
         const suggestionButtons = document.getElementById('suggestion-buttons');
+        const newChatButton = document.getElementById('new-chat-button');
+        const historyList = document.getElementById('history-list');
 
         let genAI;
+        let model;
         let chat;
+        let chatHistory = [];
+        let currentChatId = null;
+
 
         function initializeChat(apiKey) {
             try {
@@ -180,12 +264,26 @@
                     },
                 });
                 apiKeySection.style.display = 'none';
-                chatbotSection.style.display = 'flex';
+                appContainer.style.display = 'flex';
+                loadHistory();
+                startNewChat();
             } catch (error) {
                 console.error("Error initializing Google Generative AI:", error);
                 alert("Failed to initialize the AI model. Please check your API key and try again.");
                 localStorage.removeItem('googleGeminiApiKey');
+                apiKeySection.style.display = 'block';
+                appContainer.style.display = 'none';
             }
+        }
+
+        function startNewChat() {
+            chatLog.innerHTML = '';
+            currentChatId = null;
+             chat = model.startChat({
+                history: [],
+                generationConfig: { maxOutputTokens: 500 },
+            });
+            updateHistoryList();
         }
 
         function addMessageToLog(message, sender) {
@@ -204,6 +302,16 @@
 
             addMessageToLog(message, 'user');
             messageInput.value = '';
+            const isNewChat = currentChatId === null;
+
+            if (isNewChat) {
+                currentChatId = Date.now();
+                chatHistory.unshift({ id: currentChatId, title: message, messages: [] });
+            }
+
+            const currentChat = chatHistory.find(c => c.id === currentChatId);
+            currentChat.messages.push({ role: 'user', parts: [{ text: message }] });
+
 
             try {
                 addMessageToLog("Thinking...", 'bot');
@@ -214,15 +322,64 @@
 
                 chatLog.removeChild(chatLog.lastChild);
                 addMessageToLog(text, 'bot');
+                currentChat.messages.push({ role: 'model', parts: [{ text: text }] });
+                saveHistory();
+                if(isNewChat) {
+                   updateHistoryList();
+                }
 
             } catch (error) {
                 console.error("Error sending message:", error);
-                 if (chatLog.lastChild.textContent === "Thinking...") {
+                 if (chatLog.lastChild && chatLog.lastChild.textContent === "Thinking...") {
                      chatLog.removeChild(chatLog.lastChild);
                 }
                 addMessageToLog("Sorry, something went wrong. Please try again.", 'bot');
             }
         }
+
+        function saveHistory() {
+            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+        }
+
+        function loadHistory() {
+            const storedHistory = localStorage.getItem('chatHistory');
+            if (storedHistory) {
+                chatHistory = JSON.parse(storedHistory);
+                updateHistoryList();
+            }
+        }
+
+        function updateHistoryList() {
+            historyList.innerHTML = '';
+            chatHistory.forEach(chatItem => {
+                const li = document.createElement('li');
+                li.textContent = chatItem.title;
+                li.dataset.chatId = chatItem.id;
+                 if (chatItem.id === currentChatId) {
+                    li.classList.add('active');
+                }
+                historyList.appendChild(li);
+            });
+        }
+
+        function loadChat(chatId) {
+            const chatItem = chatHistory.find(c => c.id === chatId);
+            if (!chatItem) return;
+
+            currentChatId = chatId;
+            chatLog.innerHTML = '';
+
+            chatItem.messages.forEach(msg => {
+                addMessageToLog(msg.parts[0].text, msg.role === 'user' ? 'user' : 'bot');
+            });
+
+            chat = model.startChat({
+                history: chatItem.messages,
+                generationConfig: { maxOutputTokens: 500 },
+            });
+            updateHistoryList();
+        }
+
 
         saveApiKeyButton.addEventListener('click', () => {
             const apiKey = apiKeyInput.value.trim();
@@ -246,6 +403,15 @@
             if (e.target.tagName === 'BUTTON') {
                 const message = e.target.textContent;
                 sendMessage(message);
+            }
+        });
+
+        newChatButton.addEventListener('click', startNewChat);
+
+        historyList.addEventListener('click', (e) => {
+            if (e.target.tagName === 'LI') {
+                const chatId = Number(e.target.dataset.chatId);
+                loadChat(chatId);
             }
         });
 
